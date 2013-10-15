@@ -286,7 +286,7 @@ class DataServer:
         else:
             return self.snapshot(Year,Month,Day,Hour)
         
-    def getTimeSlice(self, DateStart = (1958,1,1,0), DateEnd = (1958,12,31,18) ):
+    def getTimeSliceOLD(self, DateStart = (1958,1,1,0), DateEnd = (1958,12,31,18) ):
         print 'getting %s to %s' % (DateStart,DateEnd)
         h0 = self.getHours(*DateStart)
         h1 = self.getHours(*DateEnd)
@@ -297,6 +297,20 @@ class DataServer:
             f.append( self.snapshot(*self.getDate(h0)) ) 
             h0 += 6
         return array(f)    
+
+    def getTimeSlice(self, DateStart = (1958,1,1,0), DateEnd = (1958,12,31,18) ):
+        print ' -- Getting timeslice %s to %s' % (DateStart,DateEnd)
+        h0 = self.getHours(*DateStart)
+        h1 = self.getHours(*DateEnd)        
+        N = int((h1-h0)/6+1)
+        shape = (N,) + self.snapshot(*self.getDate(h0)).shape
+        f = zeros(shape,dtype=float)
+        meter = ProgressMeter(total=N)
+        for l in range(N):
+            meter.update(1)
+            f[l] = self.snapshot(*self.getDate(h0)) 
+            h0 += 6
+        return f
 
 if __name__ == '__main__':
     d = DataServer(Field='slp', LevType='surface_analysis', Source='ERAInt')
