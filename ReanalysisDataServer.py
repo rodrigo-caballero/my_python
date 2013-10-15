@@ -16,7 +16,6 @@ class DataServer:
                  LonRange = (0.,360.)   ):
 
         if Source[0:3] == 'ERA':
-            self.Storage = 'ByYear'
             self.FieldNames = {}
             self.FieldNames['time'] = 'time'
             self.FieldNames['lev'] = 'levelist'
@@ -35,7 +34,7 @@ class DataServer:
             self.FieldNames['q'] = 'q'
             self.FieldNames['precc'] = 'cp'
             self.FieldNames['precl'] = 'lsp'
-            Dir = '/Users/rca/obs/%s/6hourly/%s/%s'% \
+            Dir = '/home/rca/obs/%s/6hourly/%s/%s'% \
                        (Source,LevType,self.FieldNames[Field])
             # dictionary of files
             Handles = [Dataset(Name) for Name in glob.glob(Dir+'/*')]
@@ -48,9 +47,11 @@ class DataServer:
             if len(self.Year0) != 4: self.Year0 = Year0.split('-')[-1]
             self.Year0 = int(self.Year0)
             # period covered
-            self.MinDate = array([Time[0] for Time in Times]).min()
-            self.MaxDate = array([Time[-1] for Time in Times]).max()
-            print 'Data from ',self.getDate(self.MinDate),' to ',self.getDate(self.MaxDate)
+            self.MinHour = array([Time[0] for Time in Times]).min()
+            self.MaxHour = array([Time[-1] for Time in Times]).max()
+            self.MinDate = self.getDate(self.MinHour)
+            self.MaxDate = self.getDate(self.MaxHour)
+            print 'Data from ',self.MinDate,' to ',self.MaxDate
                 
         elif Source == 'NCEP':
             self.Year0 = 1
@@ -172,7 +173,7 @@ class DataServer:
     def snapshot(self, Year=0, Month=1, Day=1, Hour=0):
         # select file and time index
         now  = self.getHours(Year,Month,Day,Hour)
-        if now < self.MinDate or now > self.MaxDate:
+        if now < self.MinHour or now > self.MaxHour:
             print 'Date ',self.getDate(now),' not in dataset!!'
             sys.exit()
         for key in self.Files:
@@ -196,12 +197,12 @@ class DataServer:
                 pass
             f = f[self.k0:self.k1, self.j0:self.j1, self.i0:self.i1]
         # rescale if necessary
-        try:
-            scale = File.variables[self.FieldName].scale_factor
-            offset = File.variables[self.FieldName].add_offset
-            f = f*scale+offset
-        except:
-            pass
+        ## try:
+        ##     scale = File.variables[self.FieldName].scale_factor
+        ##     offset = File.variables[self.FieldName].add_offset
+        ##     f = f*scale+offset
+        ## except:
+        ##     pass
         # done
         return f
 
@@ -240,7 +241,7 @@ class DataServer:
             else: f.append(x)
         return array(f)
 
-    def getSeason(self, Year=1959, Season='DJF', Daily=None, \
+    def getSeason_old(self, Year=1959, Season='DJF', Daily=None, \
                   TimeZoneOffset=0):
         # Return 1 season of data.
         assert Season in ['DJF','MAM','JJA','SON'],\
@@ -258,6 +259,21 @@ class DataServer:
             f.extend( x.tolist() )
         return array(f)
 
+    def getSeason(self, Year=1959, Season='DJF'):
+        if Season == 'DJF':
+            DateStart = (Year-1,12,1,0)
+            DateEnd   = (Year,2,28,18)
+        if Season == 'MAM': 
+            DateStart = (Year,3,1,0)
+            DateEnd   = (Year,5,31,18)
+        if Season == 'JJA': 
+            DateStart = (Year,6,1,0)
+            DateEnd   = (Year,8,31,18)
+        if Season == 'SON': 
+            DateStart = (Year,9,1,0)
+            DateEnd   = (Year,11,30,18)
+        return self.getTimeSlice(DateStart,DateEnd)        
+
     def getData(self, Year=1958, Month=1, Day=None, Hour=None, Season=None,\
                 TimeZoneOffset=0, Daily=None):
         if Season is not None:
@@ -269,6 +285,19 @@ class DataServer:
                 return self.getDay(Year,Month,Day,Daily=Daily)
         else:
             return self.snapshot(Year,Month,Day,Hour)
+        
+    def getTimeSlice(self, DateStart = (1958,1,1,0), DateEnd = (1958,12,31,18) ):
+        print 'getting %s to %s' % (DateStart,DateEnd)
+        h0 = self.getHours(*DateStart)
+        h1 = self.getHours(*DateEnd)
+        f = []
+        meter = ProgressMeter(total=(h1-h0)/6.+1)
+        while h0 <= h1:
+            meter.update(1)
+            f.append( self.snapshot(*self.getDate(h0)) ) 
+            h0 += 6
+        return array(f)    
 
 if __name__ == '__main__':
-    d = DataServer(Field='slp', LevType='surface', Source='ERAInt')
+    d = DataServer(Field='slp', LevType='surface_analysis', Source='ERAInt')
+    d.snapshot(Year=1980, Month=2, Day=1, Hour=0)
