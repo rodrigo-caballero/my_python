@@ -32,6 +32,7 @@ class DataServer:
             self.FieldNames['Ts'] = 'skt'
             self.FieldNames['pw'] = 'tcw'
             self.FieldNames['q'] = 'q'
+            self.FieldNames['ci'] = 'ci'
             self.FieldNames['precc'] = 'cp'
             self.FieldNames['precl'] = 'lsp'
             Dir = '/home/rca/obs/%s/6hourly/%s/%s'% \
@@ -171,11 +172,16 @@ class DataServer:
         return Dates
 
     def snapshot(self, Year=0, Month=1, Day=1, Hour=0):
+        """
+        # Extracts a single snapshot of Field.
+        # Note that netCDF4 will automatically
+        # - scale/offset values
+        # - output a masked array if nc file has fill value specify
+        """
         # select file and time index
         now  = self.getHours(Year,Month,Day,Hour)
         if now < self.MinHour or now > self.MaxHour:
-            print 'Date ',self.getDate(now),' not in dataset!!'
-            sys.exit()
+            raise ValueError('Date ',self.getDate(now),' not in dataset!!')
         for key in self.Files:
             if now in self.Times[key]:
                 File = self.Files[key]
@@ -241,24 +247,6 @@ class DataServer:
             else: f.append(x)
         return array(f)
 
-    def getSeason_old(self, Year=1959, Season='DJF', Daily=None, \
-                  TimeZoneOffset=0):
-        # Return 1 season of data.
-        assert Season in ['DJF','MAM','JJA','SON'],\
-               "Season must be one of 'DJF','MAM','JJA','SON'"
-        if Season == 'DJF': Months = [12,1,2]
-        if Season == 'MAM': Months = [3,4,5]
-        if Season == 'JJA': Months = [6,7,8]
-        if Season == 'SON': Months = [9,10,11]
-        f = []
-        for Month in Months:
-            if Month == 12:
-                x = self.getMonth(Year-1,Month,Daily,TimeZoneOffset)
-            else:
-                x = self.getMonth(Year,Month,Daily,TimeZoneOffset)
-            f.extend( x.tolist() )
-        return array(f)
-
     def getSeason(self, Year=1959, Season='DJF'):
         if Season == 'DJF':
             DateStart = (Year-1,12,1,0)
@@ -286,25 +274,17 @@ class DataServer:
         else:
             return self.snapshot(Year,Month,Day,Hour)
         
-    def getTimeSliceOLD(self, DateStart = (1958,1,1,0), DateEnd = (1958,12,31,18) ):
-        print 'getting %s to %s' % (DateStart,DateEnd)
-        h0 = self.getHours(*DateStart)
-        h1 = self.getHours(*DateEnd)
-        f = []
-        meter = ProgressMeter(total=(h1-h0)/6.+1)
-        while h0 <= h1:
-            meter.update(1)
-            f.append( self.snapshot(*self.getDate(h0)) ) 
-            h0 += 6
-        return array(f)    
-
     def getTimeSlice(self, DateStart = (1958,1,1,0), DateEnd = (1958,12,31,18) ):
         print ' -- Getting timeslice %s to %s' % (DateStart,DateEnd)
         h0 = self.getHours(*DateStart)
         h1 = self.getHours(*DateEnd)        
         N = int((h1-h0)/6+1)
-        shape = (N,) + self.snapshot(*self.getDate(h0)).shape
-        f = zeros(shape,dtype=float)
+        f = self.snapshot(*self.getDate(h0))
+        shape = (N,) + f.shape
+        if hasattr(f,'mask'):
+            f = ma.zeros(shape,dtype=float)
+        else:
+            f = zeros(shape,dtype=float)
         meter = ProgressMeter(total=N)
         for l in range(N):
             meter.update(1)
