@@ -10,29 +10,41 @@ HomeDir = os.getenv('HOME')
 
 class DataServer:
     def __init__(self,
+                 LevType=None,
                  Field='U',
                  Source='ERA40'):
         
         self.FieldNames = {}
+        if 'ERA' in Source:
+            self.FieldNames = {}
+            self.FieldNames['time'] = 'time'
+            self.FieldNames['lev'] = 'lev'
+            self.FieldNames['lat'] = 'latitude'
+            self.FieldNames['lon'] = 'longitude'
+            self.FieldNames['slp'] = 'msl'
+            self.FieldNames['U'] = 'u'
+            self.FieldNames['U'] = 'u'
+            self.FieldNames['V'] = 'v'
+            self.FieldNames['W'] = 'w'
+            self.FieldNames['Z'] = 'z'
+            self.FieldNames['T'] = 't'
+            self.FieldNames['T2'] = 't2m'
+            self.FieldNames['Ts'] = 'skt'
+            self.FieldNames['pw'] = 'tcw'
+            self.FieldNames['q'] = 'q'
+            self.FieldNames['ci'] = 'ci'
+            self.FieldNames['precc'] = 'cp'
+            self.FieldNames['precl'] = 'lsp'
         if Source == 'ERA40':
-            self.FieldNames['time']   = 'time'
-            self.FieldNames['lev']    = 'lev'
             self.FieldNames['lat']    = 'lat'
             self.FieldNames['lon']    = 'lon'
-        if Source == 'ERAInt':
-            self.FieldNames['time']   = 'time'
-            self.FieldNames['lev']    = 'lev'
-            self.FieldNames['lat']    = 'latitude'
-            self.FieldNames['lon']    = 'longitude'
+        self.File = NetCDFFile(HomeDir+'/obs/%s/monthly/%s.mon.mean.nc'\
+                               %(Source,self.FieldNames[Field]),'r')
 
-        # open monthly mean file
-        if Source == 'hadslp':
-            self.File = NetCDFFile(HomeDir+'/obs/slp/HadSLP2/hadslp2.mon.mean.nc','r')
-        else:
-            self.File = NetCDFFile(HomeDir+'/obs/%s/monthly/%s.mon.mean.nc'\
-                                   %(Source,Field),'r')
-        self.FieldName = Field
-        self.Field = self.File.variables[Field]
+        self.Field = Field
+        self.FieldName = self.FieldNames[Field]
+        self.units = self.File.variables[self.FieldName].units
+        self.long_name = self.File.variables[self.FieldName].long_name
         # base year for time computation
         self.Year0 = self._getBaseYear(self.File)
         # time axis
@@ -48,12 +60,12 @@ class DataServer:
 
         # Initialize coord axes
         lat = array(self.File.variables[self.FieldNames['lat']][:])*1.
-        lat,self.InvertLatAxis = self._setupAxis(lat)
+        self.lat,self.InvertLatAxis = self._setupAxis(lat)
         lon = array(self.File.variables[self.FieldNames['lon']][:])*1.
-        lon,self.InvertLonAxis = self._setupAxis(lon)
+        self.lon,self.InvertLonAxis = self._setupAxis(lon)
         try:
             lev = array(self.File.variables[self.FieldNames['lev']][:])*1.
-            lev,self.InvertLevAxis = self._setupAxis(lev)
+            self.lev,self.InvertLevAxis = self._setupAxis(lev)
         except:
             pass
 
@@ -90,7 +102,7 @@ class DataServer:
         ##     offset = self.Field.add_offset
         ##     x = self.Field[i]*scale+offset
         ## except:
-        f = self.Field[i]
+        f = self.File.variables[self.FieldName][i]
         # swap axes if necessary
         if len(f.shape) == 2:
             if self.InvertLatAxis: f = f[::-1,:]
@@ -146,10 +158,10 @@ class DataServer:
 
     def _getBaseYear(self,File):
         # base year for time computation
-        TimeUnits = File.variables[self.FieldNames['time']].units
-        Year0 = TimeUnits.split()[2].split('-')[0]
+        self.time_units = File.variables[self.FieldNames['time']].units
+        Year0 = self.time_units.split()[2].split('-')[0]
         if len(Year0) != 4:
-            Year0 = TimeUnits.split()[2].split('-')[-1]
+            Year0 = self.time_units.split()[2].split('-')[-1]
         return int(Year0)
 
 

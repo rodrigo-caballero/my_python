@@ -45,7 +45,8 @@ class DataServer:
             self.Files = dict(zip(range(len(Handles)),Handles))
             self.Times = dict(zip(range(len(Times)),Times))
             # base year for time computation
-            Year0 = Handles[0].variables['time'].units.split()[2]
+            self.time_units = Handles[0].variables['time'].units
+            Year0 = self.time_units.split()[2]
             self.Year0 = Year0.split('-')[0]
             if len(self.Year0) != 4: self.Year0 = Year0.split('-')[-1]
             self.Year0 = int(self.Year0)
@@ -80,7 +81,9 @@ class DataServer:
 
         # Initialize field 
         self.Field = Field
-        self.FieldName= self.FieldNames[Field]
+        self.FieldName = self.FieldNames[Field]
+        self.units = Handles[0].variables[self.FieldName].units
+        self.long_name = Handles[0].variables[self.FieldName].long_name
 
         # Initialize coord axes
         lat = array(Handles[0].variables[self.FieldNames['lat']][:])*1.
