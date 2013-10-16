@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
-import sys,glob
+import os,sys,glob
 from numpy import *
 from netCDF4 import Dataset
 import time,datetime
 from progress import ProgressMeter
+
+HomeDir = os.getenv('HOME')
 
 class DataServer:
     def __init__(self, 
@@ -35,7 +37,7 @@ class DataServer:
             self.FieldNames['ci'] = 'ci'
             self.FieldNames['precc'] = 'cp'
             self.FieldNames['precl'] = 'lsp'
-            Dir = '/home/rca/obs/%s/6hourly/%s/%s'% \
+            Dir = HomeDir+'/obs/%s/6hourly/%s/%s'% \
                        (Source,LevType,self.FieldNames[Field])
             # dictionary of files
             Handles = [Dataset(Name) for Name in glob.glob(Dir+'/*')]
@@ -67,8 +69,7 @@ class DataServer:
             self.FieldNames['V'] = 'vwnd'
             self.FieldNames['W'] = 'omega'
             self.FieldNames['T'] = 'air'
-            Dir = '/home/rca/obs/NCEP/6hourly/%s'% \
-                       self.FieldNames[Field]
+            Dir = HomeDir+'/obs/NCEP/6hourly/%s'% self.FieldNames[Field]
             self.Files = {}        
             for Year in self.Years:
                 FileName = '%s/%s.%s.nc' % \

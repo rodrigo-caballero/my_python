@@ -1,17 +1,18 @@
 #!/usr/bin/env python
 
 import sys
-from Scientific.IO.NetCDF import NetCDFFile
+from netCDF4 import Dataset as NetCDFFile
 
 def replicate(OldFileName,NewFileName):
     # Creates a new NetCDF file with the same dimensions and variables as
     # the old file but no content
     OldFile = NetCDFFile(OldFileName,'r')
-    NewFile = NetCDFFile(NewFileName,'w')
+    NewFile = NetCDFFile(NewFileName,'w',format='NETCDF3_CLASSIC')
 
     Dims = OldFile.dimensions
+
     for key in Dims:
-        NewFile.createDimension(key,Dims[key])
+        NewFile.createDimension(key,len(Dims[key]))
 
     Vars = OldFile.variables
     for key in Vars:

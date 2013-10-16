@@ -1,28 +1,35 @@
 #!/usr/bin/env python
 
 import os,sys
-from numpy      import *
-from Scientific.IO.NetCDF   import NetCDFFile
+from numpy import *
+from netCDF4 import Dataset as NetCDFFile
 from progress import ProgressMeter
 import time,datetime
 
-class DataServer:
+HomeDir = os.getenv('HOME')
 
+class DataServer:
     def __init__(self,
                  Field='U',
                  Source='ERA40'):
         
         self.FieldNames = {}
-        self.FieldNames['time']   = 'time'
-        self.FieldNames['lev']    = 'lev'
-        self.FieldNames['lat']    = 'lat'
-        self.FieldNames['lon']    = 'lon'
+        if Source == 'ERA40':
+            self.FieldNames['time']   = 'time'
+            self.FieldNames['lev']    = 'lev'
+            self.FieldNames['lat']    = 'lat'
+            self.FieldNames['lon']    = 'lon'
+        if Source == 'ERAInt':
+            self.FieldNames['time']   = 'time'
+            self.FieldNames['lev']    = 'lev'
+            self.FieldNames['lat']    = 'latitude'
+            self.FieldNames['lon']    = 'longitude'
 
         # open monthly mean file
         if Source == 'hadslp':
-            self.File = NetCDFFile('/home/rca/obs/slp/HadSLP2/hadslp2.mon.mean.nc','r')
+            self.File = NetCDFFile(HomeDir+'/obs/slp/HadSLP2/hadslp2.mon.mean.nc','r')
         else:
-            self.File = NetCDFFile('/Volumes/gordo/obs/%s/monthly/%s.mon.mean.nc'\
+            self.File = NetCDFFile(HomeDir+'/obs/%s/monthly/%s.mon.mean.nc'\
                                    %(Source,Field),'r')
         self.FieldName = Field
         self.Field = self.File.variables[Field]
@@ -38,6 +45,24 @@ class DataServer:
         print 'Field: %s' % Field
         print 'Year range: %s-%s (%s years)' %\
               (self.FirstYear,self.LastYear,self.LastYear-self.FirstYear+1)
+
+        # Initialize coord axes
+        lat = array(self.File.variables[self.FieldNames['lat']][:])*1.
+        lat,self.InvertLatAxis = self._setupAxis(lat)
+        lon = array(self.File.variables[self.FieldNames['lon']][:])*1.
+        lon,self.InvertLonAxis = self._setupAxis(lon)
+        try:
+            lev = array(self.File.variables[self.FieldNames['lev']][:])*1.
+            lev,self.InvertLevAxis = self._setupAxis(lev)
+        except:
+            pass
+
+    def _setupAxis(self,axis):
+        if axis[0] > axis[-1]:
+            axis = axis[::-1]
+            invert = True
+        else: invert = False
+        return axis,invert
         
     def getDate(self,Hours):
         # Given hours elapsed since midnight on 1 January Year0,
@@ -47,13 +72,48 @@ class DataServer:
 
     def getHours(self,Year,Month,Day,Hour):
         # Given date (year, month, day, hour),
+
         # returns hours elapsed since midnight on 1 January Year0
         Days = datetime.datetime(Year,Month,Day,Hour) \
                - datetime.datetime(self.Year0,1,1,0)
         Hours = Days.days*24 + Days.seconds/3600
         return Hours
 
-    def getSeasonalMean(self, Year=1959, Season='DJF'):
+    def getMonth(self, Year, Month):
+        # Return 1 month of data.
+        assert self.FirstYear <= Year <= self.LastYear, \
+               'Year %s not in dataset !!' % Year
+        h = self.getHours(Year,Month,5,0)
+        i = argmin(abs(self.time-h))
+        ## try:
+        ##     scale = self.Field.scale_factor
+        ##     offset = self.Field.add_offset
+        ##     x = self.Field[i]*scale+offset
+        ## except:
+        f = self.Field[i]
+        # swap axes if necessary
+        if len(f.shape) == 2:
+            if self.InvertLatAxis: f = f[::-1,:]
+            if self.InvertLonAxis: f = f[:,::-1]
+        if len(f.shape) == 3:
+            if self.InvertLatAxis: f = f[:,::-1,:]
+            if self.InvertLonAxis: f = f[:,:,::-1]
+            try:
+                if self.InvertLevAxis: f = f[::-1,:,:]
+            except:
+                pass
+        return f
+
+    def getMonthlyClimatology(self,Month):
+        f = []
+        for Year in range(self.FirstYear,self.LastYear+1):
+            f.append(self.getMonth(Year,Month))
+        if hasattr(f[0],'mask'):
+            return ma.array(f).mean(axis=0)
+        else:
+            return array(f).mean(axis=0)
+
+    def getSeason(self, Year, Season):
         # Return 1 season of data.
         assert Season in ['DJF','MAM','JJA','SON'],\
                "Season must be one of 'DJF','MAM','JJA','SON'"
@@ -63,17 +123,26 @@ class DataServer:
         if Season == 'SON': Months = [9,10,11]
         f = []
         for Month in Months:
-            if Month == 12: h = self.getHours(Year-1,Month,5,0)
-            else:           h = self.getHours(Year,Month,5,0)
-            i = argmin(abs(self.time-h))
-            try:
-                scale = self.Field.scale_factor
-                offset = self.Field.add_offset
-                x = self.Field[i]*scale+offset
-            except:
-                x = self.Field[i]
+            if Month == 12: x = self.getMonth(Year-1,Month)
+            else:           x = self.getMonth(Year,Month)
             f.append(x)
-        return average( array(f), axis=0 )
+        if hasattr(f[0],'mask'):
+            return ma.array(f).mean(axis=0)
+        else:
+            return array(f).mean(axis=0)
+
+    def getSeasonalClimatology(self,Season):
+        f = []
+        if Season == 'DJF':
+            FirstYear = self.FirstYear+1
+        else:
+            FirstYear = self.FirstYear
+        for Year in range(FirstYear,self.LastYear+1):
+            f.append(self.getSeason(Year,Season))
+        if hasattr(f[0],'mask'):
+            return ma.array(f).mean(axis=0)
+        else:
+            return array(f).mean(axis=0)
 
     def _getBaseYear(self,File):
         # base year for time computation
@@ -119,7 +188,6 @@ def CreateOutputFile(FileName,data):
     var.units = data.Field.units
     return File
 
-
 def Seasonal(Field='U', Season='DJF', Source='ERA40', \
              YearStart=None, YearStop=None):
     # instatiate data server
@@ -139,7 +207,7 @@ def Seasonal(Field='U', Season='DJF', Source='ERA40', \
     for Year in range(YearStart,YearStop+1):
         meter.update(1)
         # get 1 season of data
-        SeasonData = data.getSeasonalMean(Year,Season)
+        SeasonData = data.getSeason(Year,Season)
         File.variables['time'][TimeIndex]  = float(Year)
         File.variables[Field][TimeIndex] = SeasonData.astype('f')
         TimeIndex += 1
