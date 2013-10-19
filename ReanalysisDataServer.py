@@ -37,6 +37,8 @@ class DataServer:
             self.FieldNames['ci'] = 'ci'
             self.FieldNames['precc'] = 'cp'
             self.FieldNames['precl'] = 'lsp'
+            self.FieldNames['flsd'] = 'strd'
+            self.FieldNames['flsn'] = 'str'
             Dir = HomeDir+'/obs/%s/6hourly/%s/%s'% \
                        (Source,LevType,self.FieldNames[Field])
             # dictionary of files
@@ -79,7 +81,8 @@ class DataServer:
 
         else: raise ValueError, 'Source %s not known!'%Source
 
-        # Initialize field 
+        # Initialize field
+        self.LevType = LevType
         self.Field = Field
         self.FieldName = self.FieldNames[Field]
         self.units = Handles[0].variables[self.FieldName].units
@@ -213,8 +216,15 @@ class DataServer:
         ##     f = f*scale+offset
         ## except:
         ##     pass
-        # done
-        return f
+        # scale field to get units of s**-1
+        if self.LevType == 'surface_forecast':
+            if Hour in [6,18]:
+                factor = 1./60./60./6. 
+            else:
+                factor = 1./60./60./12.
+        else:
+            factor = 1.
+        return f*factor
 
     def getDay(self, Year=1958, Month=1, Day=1, Daily=None, TimeZoneOffset=0):
         # Return 1 day of data. TimeZoneOffset = -XX means time zone
