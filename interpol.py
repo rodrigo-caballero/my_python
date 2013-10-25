@@ -39,9 +39,9 @@ subroutine interpol(nin,nout,xin,yin,xout,extrap,yout,fill_value)
   call spline(xin,yin,nin,yp1,ypn,spl) 
 
   do n=2,nout-1
-    if (extrap == 0 .and. &
-    ((xout(n) < xin(1) .and. xout(n+1) < xin(1)) .or. &
-    (xout(n-1) > xin(nin) .and. xout(n) > xin(nin)))) then
+    if (extrap == 0 .and. ((xout(n)<xin(1)).or.(xout(n)>xin(nin)))) then
+!    ((xout(n) < xin(1) .and. xout(n+1) < xin(1)) .or. &
+!    (xout(n-1) > xin(nin) .and. xout(n) > xin(nin)))) then
       yout(n) = fill_value
     else
       call splint(xin,yin,spl,nin,xout(n),yout(n))

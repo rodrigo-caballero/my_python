@@ -4,45 +4,59 @@ import os,sys,glob
 from numpy import *
 from netCDF4 import Dataset
 import time,datetime
+from interpol import vinterpol
 from progress import ProgressMeter
 
-HomeDir = os.getenv('HOME')
+ObsDir = '/qnap/obs'
 
 class DataServer:
     def __init__(self, 
                  Field    = 'U', 
-                 LevType  = 'plev',
-                 Source   = 'ERA40',
+                 Source   = 'ERAInt',
+                 LevType  = None,
+                 HybToPress = True,
+                 PLevs    = None,
                  LevRange = (0.,1000.), 
                  LatRange = (-90.,90.), 
                  LonRange = (0.,360.)   ):
 
         if Source[0:3] == 'ERA':
-            self.FieldNames = {}
-            self.FieldNames['time'] = 'time'
-            self.FieldNames['lev'] = 'levelist'
-            self.FieldNames['lat'] = 'latitude'
-            self.FieldNames['lon'] = 'longitude'
-            self.FieldNames['slp'] = 'msl'
-            self.FieldNames['U'] = 'u'
-            self.FieldNames['U'] = 'u'
-            self.FieldNames['V'] = 'v'
-            self.FieldNames['W'] = 'w'
-            self.FieldNames['Z'] = 'z'
-            self.FieldNames['T'] = 't'
-            self.FieldNames['T2'] = 't2m'
-            self.FieldNames['Ts'] = 'skt'
-            self.FieldNames['pw'] = 'tcw'
-            self.FieldNames['q'] = 'q'
-            self.FieldNames['ci'] = 'ci'
-            self.FieldNames['precc'] = 'cp'
-            self.FieldNames['precl'] = 'lsp'
-            self.FieldNames['flsd'] = 'strd'
-            self.FieldNames['flsn'] = 'str'
-            Dir = HomeDir+'/obs/%s/6hourly/%s/%s'% \
-                       (Source,LevType,self.FieldNames[Field])
+            # list of all data holdings
+            FieldNames = {}
+            FieldNames['time']  = ['time','coord']
+            FieldNames['lev']   = ['levelist','coord']
+            FieldNames['lat']   = ['latitude','coord']
+            FieldNames['lon']   = ['longitude','coord']
+            FieldNames['U']     = ['u','plev']
+            FieldNames['V']     = ['v','plev']
+            FieldNames['W']     = ['w','plev']
+            FieldNames['Z']     = ['z','plev']
+            FieldNames['T']     = ['t','plev']
+            FieldNames['q']     = ['q','plev']
+            FieldNames['lnsp']  = ['lnsp','modlev']
+            FieldNames['slp']   = ['msl','surface_analysis']
+            FieldNames['T2']    = ['t2m','surface_analysis']
+            FieldNames['TS']    = ['skt','surface_analysis']
+            FieldNames['U10']   = ['u10','surface_analysis']
+            FieldNames['V10']   = ['v10','surface_analysis']
+            FieldNames['pw']    = ['tcw','surface_analysis']
+            FieldNames['pwv']   = ['tcwv','surface_analysis']
+            FieldNames['cld']   = ['cld','surface_analysis']
+            FieldNames['ci']    = ['ci','surface_analysis']
+            FieldNames['precc'] = ['cp','surface_forecast']
+            FieldNames['precl'] = ['lsp','surface_forecast']
+            FieldNames['flds']  = ['strd','surface_forecast']
+            FieldNames['flns']  = ['str','surface_forecast']
+            # set up field name and directory
+            self.Field = Field
+            self.FieldName = FieldNames[Field][0]
+            if LevType is None:
+                self.LevType = FieldNames[Field][1]
+            else:
+                self.LevType = LevType
+            Dir = ObsDir+'/%s/6hourly/%s/%s'%(Source,self.LevType,self.FieldName)
             # dictionary of files
-            Handles = [Dataset(Name) for Name in glob.glob(Dir+'/*')]
+            Handles = [Dataset(Name,'r') for Name in glob.glob(Dir+'/*')]
             Times   = [Handle.variables['time'][:] for Handle in Handles]
             self.Files = dict(zip(range(len(Handles)),Handles))
             self.Times = dict(zip(range(len(Times)),Times))
@@ -57,48 +71,63 @@ class DataServer:
             self.MaxHour = array([Time[-1] for Time in Times]).max()
             self.MinDate = self.getDate(self.MinHour)
             self.MaxDate = self.getDate(self.MaxHour)
-            print 'Data from ',self.MinDate,' to ',self.MaxDate
+            print 'DataServer: Setting up, data from ',Dir
+            #print 'DataServer: spanning ',self.MinDate,' to ',self.MaxDate
+            # set up interpolation from hybrid to pressure coords if needed
+            self.Interpolate = False
+            if self.LevType =='modlev':
+                d = Dataset(ObsDir+'/ERAInt/ERA-Interim_coordvars.nc','r')
+                self.hyam = d.variables['a_model_alt'][:]
+                self.hybm = d.variables['b_model_alt'][:]
+                d.close()
+                self.FillValue = 1.e20
+                if PLevs is None:
+                    self.p = (self.hyam+self.hybm*105000.)/100.
+                else:
+                    self.p = PLevs
+                if HybToPress:
+                    self.Interpolate = True
+                    self.ps_data = DataServer(Field='lnsp',Source=Source, \
+                                              LevType='modlev',HybToPress=False)                
                 
         elif Source == 'NCEP':
+            ########## NEEDS UPDATING !!
             self.Year0 = 1
             self.Years = range(1948,2007)
             self.Storage = 'ByYear'
-            self.FieldNames = {}
-            self.FieldNames['time'] = 'time'
-            self.FieldNames['lev'] = 'level'
-            self.FieldNames['lat'] = 'lat'
-            self.FieldNames['lon'] = 'lon'
-            self.FieldNames['U'] = 'uwnd'
-            self.FieldNames['V'] = 'vwnd'
-            self.FieldNames['W'] = 'omega'
-            self.FieldNames['T'] = 'air'
-            Dir = HomeDir+'/obs/NCEP/6hourly/%s'% self.FieldNames[Field]
+            FieldNames = {}
+            FieldNames['time'] = 'time'
+            FieldNames['lev'] = 'level'
+            FieldNames['lat'] = 'lat'
+            FieldNames['lon'] = 'lon'
+            FieldNames['U'] = 'uwnd'
+            FieldNames['V'] = 'vwnd'
+            FieldNames['W'] = 'omega'
+            FieldNames['T'] = 'air'
+            Dir = ObsDir+'/obs/NCEP/6hourly/%s'% FieldNames[Field]
             self.Files = {}        
             for Year in self.Years:
                 FileName = '%s/%s.%s.nc' % \
-                           (Dir,self.FieldNames[Field],Year)
+                           (Dir,FieldNames[Field],Year)
                 self.Files[Year] =  NetCDFFile(FileName,'r')
 
         else: raise ValueError, 'Source %s not known!'%Source
 
         # Initialize field
-        self.LevType = LevType
-        self.Field = Field
-        self.FieldName = self.FieldNames[Field]
         self.units = Handles[0].variables[self.FieldName].units
         self.long_name = Handles[0].variables[self.FieldName].long_name
 
         # Initialize coord axes
-        lat = array(Handles[0].variables[self.FieldNames['lat']][:])*1.
+        lat = array(Handles[0].variables[FieldNames['lat'][0]][:])*1.
         (self.lat, self.j0, self.j1, self.InvertLatAxis) = \
                    self._setupAxis(lat,LatRange)
         self.nlat = len(self.lat)
-        lon = array(Handles[0].variables[self.FieldNames['lon']][:])*1.
+        lon = array(Handles[0].variables[FieldNames['lon'][0]][:])*1.
         (self.lon, self.i0, self.i1, self.InvertLonAxis) = \
                    self._setupAxis(lon,LonRange)
         self.nlon = len(self.lon)
         try:
-            lev = array(Handles[0].variables[self.FieldNames['lev']][:])*1.
+            lev = array(Handles[0].variables[FieldNames['lev'][0]][:])*1.
             (self.lev, self.k0, self.k1, self.InvertLevAxis) = \
                        self._setupAxis(lev,LevRange)
             self.nlev = len(self.lev)
@@ -115,9 +144,8 @@ class DataServer:
         axis = axis[i0:i1]
         return axis,i0,i1,invert
 
-
     def closeFiles(self):
-        for File in self.Files.values(): self.File.close()
+        for File in self.Files.values(): File.close()
         
     def getDate(self,Hours):
         # Given hours elapsed since midnight on 1 January Year0,
@@ -188,12 +216,16 @@ class DataServer:
         # select file and time index
         now  = self.getHours(Year,Month,Day,Hour)
         if now < self.MinHour or now > self.MaxHour:
-            raise ValueError('Date ',self.getDate(now),' not in dataset!!')
+            raise ValueError('Date '+str(self.getDate(now))+' not in dataset!!')
+        Found = False
         for key in self.Files:
             if now in self.Times[key]:
                 File = self.Files[key]
                 l    = argmin(abs(self.Times[key]-now))
+                Found = True
                 break
+        if not Found:
+            raise ValueError('Date '+str(self.getDate(now))+str(now)+' not found!!')
         # retrieve variable
         f = File.variables[self.FieldName][l]
         # swap axes if necessary and select slab
@@ -209,14 +241,12 @@ class DataServer:
             except:
                 pass
             f = f[self.k0:self.k1, self.j0:self.j1, self.i0:self.i1]
-        # rescale if necessary
-        ## try:
-        ##     scale = File.variables[self.FieldName].scale_factor
-        ##     offset = File.variables[self.FieldName].add_offset
-        ##     f = f*scale+offset
-        ## except:
-        ##     pass
-        # scale field to get units of s**-1
+        # interpolate from model to pressure coords if required
+        if self.Interpolate:
+            lnsp = self.ps_data.snapshot(Year,Month,Day,Hour)
+            ps = exp(lnsp)
+            f = self.interpolate(f,ps,self.p)
+        # scale field to get units of s**-1 in forecast variables
         if self.LevType == 'surface_forecast':
             if Hour in [6,18]:
                 factor = 1./60./60./6. 
@@ -226,6 +256,25 @@ class DataServer:
             factor = 1.
         return f*factor
 
+    def hybToPress(self, xold, ps, p=None):
+        # interpolate from hybrid levels to pressure levels p
+        if p is None: p = self.p
+        if len(xold.shape) == 3:
+            xnew = self.interpolate(xold,ps,p)
+        if len(xold.shape) == 4:
+            nt,nz,ny,nx = xold.shape
+            nz = len(p)
+            xnew = ma.zeros((nt,nz,ny,nx),dtype=float)
+            for l in range(nt):
+                xnew[l] = self.interpolate(xold[l],ps[l],p)
+        return xnew
+
+    def interpolate(self,xold,ps,p):
+        pnew = p[:,None,None] + ps[None,:,:]*0.
+        pold = (self.hyam[:,None,None]+self.hybm[:,None,None]*ps[None,:,:])/100.
+        xnew = vinterpol(pold,xold,pnew,Extrapolate=False,FillValue=self.FillValue)
+        return xnew
+        
     def getDay(self, Year=1958, Month=1, Day=1, Daily=None, TimeZoneOffset=0):
         # Return 1 day of data. TimeZoneOffset = -XX means time zone
         # is XX hours behind (earlier) than UTC
@@ -289,7 +338,7 @@ class DataServer:
             return self.snapshot(Year,Month,Day,Hour)
         
     def getTimeSlice(self, DateStart = (1958,1,1,0), DateEnd = (1958,12,31,18) ):
-        print ' -- Getting timeslice %s to %s' % (DateStart,DateEnd)
+        print 'DataServer: Getting timeslice %s to %s' % (DateStart,DateEnd)
         h0 = self.getHours(*DateStart)
         h1 = self.getHours(*DateEnd)        
         N = int((h1-h0)/6+1)
@@ -307,5 +356,10 @@ class DataServer:
         return f
 
 if __name__ == '__main__':
-    d = DataServer(Field='slp', LevType='surface_analysis', Source='ERAInt')
-    d.snapshot(Year=1980, Month=2, Day=1, Hour=0)
+    d = DataServer(Field='T', LevType='modlev')
+    f=d.snapshot(Year=1980, Month=2, Day=1, Hour=0)
+    import matplotlib.pyplot as plt
+    plt.contourf(f[:,:,0])
+    plt.colorbar()
+    plt.show()
+
